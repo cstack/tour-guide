@@ -7,7 +7,9 @@ class App extends React.Component {
     super(props);
     this.state = {
       loadingMessage: null,
+      error: null,
       location: null,
+      places: null,
     };
   }
 
@@ -15,8 +17,10 @@ class App extends React.Component {
     let contents = [];
     if (this.state.loadingMessage !== null) {
       contents.push(<p key="loading-message">{this.state.loadingMessage}</p>);
-    } else if (this.state.location !== null) {
-      contents.push(<NearbyPlaces location={this.state.location} />);
+    } else if (this.state.error !== null) {
+      contents.push(<p key="error-message">{JSON.stringify(this.state.error)}</p>);
+    } else if (this.state.places !== null) {
+      contents.push(<NearbyPlaces key="NearbyPlaces" places={this.state.places} />);
     } else {
       contents.push(<button key="get-location-button" onClick={this.handleFindNearbyPlacesClicked.bind(this)}>Find Nearby Places</button>);
     }
@@ -41,25 +45,11 @@ class App extends React.Component {
   handleLocationFound(location) {
     console.log("handleLocationFound");
     this.setState({
-      loadingMessage: null,
+      loadingMessage: "Getting nearby places from Wikipedia...",
       location: location,
     });
-  }
-}
-
-class NearbyPlaces extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      isLoaded: false,
-      items: null,
-      error: null,
-    };
-  }
-
-  componentDidMount() {
-    const latitude = this.props.location.coords.latitude;
-    const longitude = this.props.location.coords.longitude;
+    const latitude = location.coords.latitude;
+    const longitude = location.coords.longitude;
     fetch(`https://en.wikipedia.org/w/api.php?origin=*&format=json&action=query&generator=geosearch&ggscoord=${latitude}|${longitude}&prop=coordinates|pageimages|description|info&ggsradius=10000`)
       .then(res => res.json())
       .then(
@@ -67,43 +57,76 @@ class NearbyPlaces extends React.Component {
           if (result.error) {
             console.log("Error returned in JSON response");
             this.setState({
-              isLoaded: true,
               error: result.error,
             });
           } else {
             console.log("Got a JSON response");
             this.setState({
-              isLoaded: true,
-              items: Object.entries(result.query.pages),
+              loadingMessage: null,
+              places: Object.entries(result.query.pages),
             });
           }
         },
         (error) => {
           console.log("Error returned in HTTP response");
           this.setState({
-            isLoaded: true,
             error: error,
           });
         }
       )
   }
+}
+
+class NearbyPlaces extends React.Component {
+  constructor(props) {
+    super(props);
+  }
 
   render() {
-    let contents = [];
-    if (this.state.isLoaded === false) {
-      contents.push(<p key="loading-message">Getting nearby places from Wikipedia...</p>);
-    } else if (this.state.error !== null) {
-      contents.push(<p key="error-message">{JSON.stringify(this.state.error)}</p>);
-    } else {
-      contents = this.state.items.map((item) => {
-        return (<Place key={item[1].pageid} title={item[1].title} pageId={item[1].pageid} />);
-      });
-    }
+    const contents = this.props.places.map((place) => {
+      return (
+        <Place
+          key={place[1].pageid}
+          title={place[1].title}
+          pageId={place[1].pageid}
+          thumbnailUrl={place[1].thumbnail.source}
+          onClick={() => { this.startPlaying(place[1].pageid) } }
+        />);
+    });
     return (
       <div className="NearbyPlaces">
         {contents}
       </div>
     );
+  }
+
+  startPlaying(pageId) {
+    fetch(`https://en.wikipedia.org/w/api.php?origin=*&format=json&action=query&prop=extracts&pageids=${pageId}&explaintext=1&formatversion=2`)
+      .then(res => res.json())
+      .then(
+        (result) => {
+          if (result.error) {
+            console.log("Error returned in JSON response");
+            this.setState({
+              error: result.error,
+            });
+          } else {
+            console.log("Got a JSON response");
+            const page = Object.entries(result.query.pages)[0][1];
+            const title = page.title;
+            const extract = page.extract;
+            const speaker = window.speechSynthesis;
+            const utterance = new SpeechSynthesisUtterance(`${title}. ${extract}`);
+            speaker.speak(utterance);
+          }
+        },
+        (error) => {
+          console.log("Error returned in HTTP response");
+          this.setState({
+            error: error,
+          });
+        }
+      )
   }
 }
 
@@ -117,7 +140,10 @@ class Place extends React.Component {
   render() {
     return (
       <div className="Place">
-        {this.props.title}
+        <a href="#" onClick={this.props.onClick}>
+          <img src={this.props.thumbnailUrl} />
+          {this.props.title}
+        </a>
       </div>
     );
   }
